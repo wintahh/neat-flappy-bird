@@ -7,12 +7,12 @@ WIDTH, HEIGHT = 600,600
 GRAVITY = 0.45
 FLAP_STRENGTH = -7
 PIPE_SPEED = -3
-PIPE_DISTANCE = 200
-PIPE_GAP = 150
+PIPE_DISTANCE = 250
+PIPE_GAP = 140
 MAX_VELOCITY = 13
 
 print();print()
-DEBUG_SCORE = str(input('show debug? (y/n): ')) in ['yes', 'y']
+DEBUG_SCORE = False
 
 # objects
 
@@ -37,7 +37,7 @@ class Bird:
             self.vel = -MAX_VELOCITY
         self.y += self.vel
 
-        if self.y <= 0 or self.y >= HEIGHT:
+        if self.y <= 0 or self.y >= HEIGHT or self.score >= 1000:
             self.alive = False
 
 class Pipe:
@@ -70,16 +70,19 @@ class Pipe:
 # environment
 
 class FlappyGame:
-    def __init__(self, render=True):
+    def __init__(self, render=True, show_inputs=True):
         self.render = render
+        self.show_inputs = show_inputs
 
         if render:
             pygame.init()
-            self.screen = pygame.display.set_mode((WIDTH, HEIGHT)) if render else None
+            self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
             self.clock = pygame.time.Clock()
         else:
             self.screen = None
             self.clock = None
+
+        self.input_state = []
         self.reset()
 
     def reset(self):
@@ -87,13 +90,13 @@ class FlappyGame:
         self.pipes = [Pipe(WIDTH + 100)]
         self.frame = 0
         self.fitness = 0
-        return self.get_state()
+        self.input_state = self.get_state()
+        return self.input_state
     
     def get_state(self):
         pipe1 = self.pipes[0]
         pipe2 = self.pipes[1] if len(self.pipes) > 1 else pipe1
-
-        return [ # normalized inputs for neat 
+        state = [ # normalized inputs for neat 
             self.bird.y / HEIGHT,                  # relative height
             self.bird.vel / MAX_VELOCITY,          # relative velocity
             (pipe1.x - self.bird.x) / WIDTH,       # first pipe distance
@@ -103,6 +106,8 @@ class FlappyGame:
             (pipe2.gap_y - PIPE_GAP//2) / HEIGHT,  # next pipe gap top
             (pipe2.gap_y + PIPE_GAP//2) / HEIGHT,  # next pipe gap bot
         ]
+        self.input_state = state
+        return state
     
     def step(self, action):
         if action:
@@ -119,19 +124,158 @@ class FlappyGame:
         if self.pipes[-1].x < WIDTH - PIPE_DISTANCE:
             self.pipes.append(Pipe(WIDTH))
 
-        # cull vieux pipes
-        if self.pipes[0].x < -50:
-            self.pipes.pop(0)
-
-        # score 
-        if not self.pipes[0].passed and self.bird.x > self.pipes[0].x + 25:
+        # score and remove pipe
+        if self.bird.x > self.pipes[0].x + 50:
             self.bird.score += 1
-            self.pipes[0].passed = True
+            self.pipes.pop(0)
 
         self.frame += 1
 
         done = not self.bird.alive
         return self.get_state(), done
+    
+    def draw_debug(self):
+        if not self.show_inputs or not self.render:
+            return
+        
+        font = pygame.font.SysFont('Arial', 14)
+        small_font = pygame.font.SysFont('Arial', 11)
+        
+        # Draw background panel
+        panel_width = 220
+        panel_height = 270  # Increased height for more text
+        panel_x = WIDTH - panel_width - 10
+        panel_y = 10
+        
+        # Semi-transparent background
+        panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
+        panel_surface.fill((0, 0, 0, 180))  # Black with transparency
+        self.screen.blit(panel_surface, (panel_x, panel_y))
+        
+        # Draw border
+        pygame.draw.rect(self.screen, (255, 255, 255), 
+                        (panel_x, panel_y, panel_width, panel_height), 2)
+        
+        # Draw title
+        title = font.render("Neural Network Inputs", True, (255, 255, 255))
+        self.screen.blit(title, (panel_x + 10, panel_y + 5))
+        
+        # Input names
+        input_names = [
+            "Bird Y Position",
+            "Bird Velocity",
+            "Pipe 1 Distance",
+            "Pipe 1 Gap Top",
+            "Pipe 1 Gap Bottom",
+            "Pipe 2 Distance",
+            "Pipe 2 Gap Top",
+            "Pipe 2 Gap Bottom"
+        ]
+        
+        y_offset = 35
+        bar_width = 120
+        bar_height = 10
+        
+        for i, (name, value) in enumerate(zip(input_names, self.input_state)):
+            # Draw input name
+            name_surface = small_font.render(name, True, (255, 255, 255))
+            self.screen.blit(name_surface, (panel_x + 10, panel_y + y_offset))
+            
+            # Draw value text
+            if i in [0, 2, 3, 4, 5, 6, 7]:  # Values that should be 0-1
+                value_text = f"{value:.3f}"
+            elif i == 1:  # Velocity (-1 to 1)
+                value_text = f"{value:+.3f}"  # Show + or - sign
+            else:
+                value_text = f"{value:.3f}"
+                
+            value_surface = small_font.render(value_text, True, (255, 255, 255))
+            self.screen.blit(value_surface, (panel_x + 180, panel_y + y_offset))
+            
+            # For velocity (input 1), draw special bar from -1 to 1
+            if i == 1:  # Bird velocity
+                bar_x = panel_x + 10
+                bar_y = panel_y + y_offset + 18
+                
+                # Background bar
+                pygame.draw.rect(self.screen, (100, 100, 100), 
+                               (bar_x, bar_y, bar_width, bar_height))
+                
+                # Draw center line
+                center_x = bar_x + bar_width // 2
+                pygame.draw.line(self.screen, (200, 200, 200),
+                               (center_x, bar_y - 3),
+                               (center_x, bar_y + bar_height + 3), 2)
+                
+                # Draw velocity bar (from -1 to 1)
+                # Map -1 to left edge, 0 to center, 1 to right edge
+                fill_center = bar_x + bar_width // 2
+                fill_width = int(abs(value) * (bar_width // 2))
+                
+                if value > 0:  # Positive velocity (going down)
+                    fill_start = fill_center
+                    fill_end = fill_center + min(fill_width, bar_width // 2)
+                    color = (255, 100, 100)  # Red for downward
+                else:  # Negative velocity (going up)
+                    fill_start = fill_center - min(fill_width, bar_width // 2)
+                    fill_end = fill_center
+                    color = (100, 255, 100)  # Green for upward
+                
+                pygame.draw.rect(self.screen, color,
+                               (fill_start, bar_y, fill_end - fill_start, bar_height))
+                
+                # Draw border
+                pygame.draw.rect(self.screen, (255, 255, 255), 
+                               (bar_x, bar_y, bar_width, bar_height), 1)
+                
+                # Draw -1, 0, 1 markers (just lines, no labels)
+                for marker_pos in [-1, 0, 1]:
+                    marker_x = bar_x + bar_width // 2 + int(marker_pos * (bar_width // 2))
+                    marker_y = bar_y - 3
+                    pygame.draw.line(self.screen, (200, 200, 200), 
+                                   (marker_x, marker_y), 
+                                   (marker_x, marker_y + bar_height + 6), 1)
+            
+            # For position and distance inputs (0, 2, 5), draw normal bars
+            elif i in [0, 2, 5]:
+                bar_x = panel_x + 10
+                bar_y = panel_y + y_offset + 18
+                
+                # Background bar
+                pygame.draw.rect(self.screen, (100, 100, 100), 
+                               (bar_x, bar_y, bar_width, bar_height))
+                
+                # Value bar (clamped to [0, 1])
+                clamped_value = max(0, min(1, value))
+                fill_width = int(clamped_value * bar_width)
+                
+                # Color based on input type
+                if i == 0:  # Bird position
+                    color = (100, 200, 255)  # Blue
+                else:  # Distances
+                    color = (100, 255, 100)  # Green
+                
+                pygame.draw.rect(self.screen, color, 
+                               (bar_x, bar_y, fill_width, bar_height))
+                
+                # Draw border
+                pygame.draw.rect(self.screen, (255, 255, 255), 
+                               (bar_x, bar_y, bar_width, bar_height), 1)
+                
+                # Draw 0, 0.5, 1 markers (just lines, no labels)
+                for marker in [0, 0.5, 1]:
+                    marker_x = bar_x + int(marker * bar_width)
+                    marker_y = bar_y - 3
+                    pygame.draw.line(self.screen, (200, 200, 200), 
+                                   (marker_x, marker_y), 
+                                   (marker_x, marker_y + bar_height + 6), 1)
+            
+            # For gap top/bottom (3, 4, 6, 7), just show text (no bar)
+            elif i in [3, 4, 6, 7]:
+                # No bar for these, just text
+                pass
+            
+            y_offset += 35 if i in [0, 1, 2, 5] else 25  # Less spacing for text-only inputs
 
     def draw(self):
         if not self.render:
@@ -170,14 +314,12 @@ class FlappyGame:
         score_surface = font.render(f'Score : {self.bird.score}', True, BLACK)
         score_rect = score_surface.get_rect()
         score_rect.midleft = (20, 20)
+        self.screen.blit(score_surface, score_rect)
 
         if DEBUG_SCORE:
-            fitness_surface = font.render(f'Fitness : {self.fitness:.2f}', True, BLACK)
-            fitness_rect = fitness_surface.get_rect()
-            fitness_rect.midright = (WIDTH - 20, HEIGHT - 20)
+            self.draw_debug()
 
         self.screen.blit(score_surface, score_rect)
-        self.screen.blit(fitness_surface, fitness_rect)
 
         pygame.display.flip()
 
