@@ -1,18 +1,18 @@
 import pygame
 import random
+import sys
 
 #cstes
 
 WIDTH, HEIGHT = 600,600
 GRAVITY = 0.45
-FLAP_STRENGTH = -7
+FLAP_STRENGTH = -8
 PIPE_SPEED = -3
 PIPE_DISTANCE = 250
 PIPE_GAP = 140
 MAX_VELOCITY = 13
 
-print();print()
-DEBUG_SCORE = False
+DEBUG_SCORE = True
 
 # objects
 
@@ -37,7 +37,7 @@ class Bird:
             self.vel = -MAX_VELOCITY
         self.y += self.vel
 
-        if self.y <= 0 or self.y >= HEIGHT or self.score >= 1000:
+        if self.y <= 0 or self.y >= HEIGHT or self.score >= 10000:
             self.alive = False
 
 class Pipe:
@@ -70,9 +70,8 @@ class Pipe:
 # environment
 
 class FlappyGame:
-    def __init__(self, render=True, show_inputs=True):
+    def __init__(self, render=True):
         self.render = render
-        self.show_inputs = show_inputs
 
         if render:
             pygame.init()
@@ -93,7 +92,7 @@ class FlappyGame:
         self.input_state = self.get_state()
         return self.input_state
     
-    def get_state(self):
+    def get_state(self): # for neat
         pipe1 = self.pipes[0]
         pipe2 = self.pipes[1] if len(self.pipes) > 1 else pipe1
         state = [ # normalized inputs for neat 
@@ -135,7 +134,7 @@ class FlappyGame:
         return self.get_state(), done
     
     def draw_debug(self):
-        if not self.show_inputs or not self.render:
+        if not self.render:
             return
         
         font = pygame.font.SysFont('Arial', 14)
@@ -319,8 +318,6 @@ class FlappyGame:
         if DEBUG_SCORE:
             self.draw_debug()
 
-        self.screen.blit(score_surface, score_rect)
-
         pygame.display.flip()
 
     def run_genome(self, net, render=False):
@@ -353,6 +350,7 @@ if __name__ == "__main__":
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+                sys.exit()
 
         keys = pygame.key.get_pressed()
         space_down = keys[pygame.K_SPACE]
@@ -361,6 +359,7 @@ if __name__ == "__main__":
         space_was_down = space_down
 
         _, done = game.step(action)
+        game.clock.tick(60)
         game.draw()
 
         if done:
